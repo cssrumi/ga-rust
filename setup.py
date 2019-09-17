@@ -74,3 +74,5 @@ try:
     from example._native__ffi import ffi
 except OSError:
     pypy_fix()
+except ModuleNotFoundError:
+    pass
