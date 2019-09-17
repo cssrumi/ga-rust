@@ -1,0 +1,11 @@
+[package]
+name = "example"
+version = "0.1.0"
+build = "build.rs"
+
+[lib]
+name = "example"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+cbindgen = "0.5.2"
