@@ -1,4 +1,4 @@
-from example import test, sum_array
+from ga import test, sum_array
 
 
 print('imported')

@@ -1,6 +1,6 @@
 from time import clock
 
-import example
+import ga
 
 
 def bench(func: callable, args: list):
@@ -14,9 +14,9 @@ def bench(func: callable, args: list):
 
 
 def sum_array():
-    arr = [a * 3 + 1 for a in range(900000)]
+    arr = [a * 3 + 1 for a in range(90000)]
 
-    bench(example.sum_array, [arr])
+    bench(ga.sum_array, [arr])
     bench(sum, [arr])
 
 

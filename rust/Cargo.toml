@@ -1,11 +1,14 @@
 [package]
-name = "example"
+name = "ga"
 version = "0.1.0"
 build = "build.rs"
 
 [lib]
-name = "example"
+name = "ga"
 crate-type = ["cdylib"]
 
 [build-dependencies]
 cbindgen = "0.5.2"
+
+[dependencies]
+rand = "0.7"
