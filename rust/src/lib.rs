@@ -1,4 +1,5 @@
 extern crate rand;
+//extern crate libc;
 
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
@@ -39,7 +40,7 @@ impl Individual {
             } else {
                 // random number between -1 to 1
                 // rng.gen() generate value between 0 to 1
-                let mut new_value: c_double = rng.gen();
+                let new_value: c_double = rng.gen();
                 let new_value = new_value * 2.0 - 1.0;
                 new_genotype[index] = new_value;
             }
@@ -84,17 +85,22 @@ pub extern fn individual_free(ptr: *mut Individual) {
 }
 
 #[no_mangle]
-pub extern "C" fn individual_to_string(mut individual: *mut Individual) -> *const u8 {
+pub extern "C" fn individual_to_string(individual: *mut Individual) -> *const c_char {
     assert!(!individual.is_null());
-//    let boxed = unsafe { Box::from_raw(individual); };
-    let str = unsafe { (*individual).to_string() };
-//    let test = "Hello World\0".as_ptr();
+    let s = unsafe { (*individual).to_string() };
+    let c_str = CString::new(s).unwrap();
+    let p = c_str.as_ptr();
+    std::mem::forget(c_str);
+    p
+}
+
+#[no_mangle]
+pub extern "C" fn individual_to_u8(individual: *mut Individual) -> *const u8 {
+    assert!(!individual.is_null());
+    let str = unsafe { (*individual).to_string() } + &"\0";
     let c_str = &str[..];
     let result = c_str.as_ptr();
     result
-//    println!("{}", &str);
-//    let c_string = CString::new(str);
-//    c_string.unwrap().into_raw()
 }
 
 // TrainingData
@@ -138,8 +144,18 @@ impl ToString for TrainingData<'_> {
 // External functions for TrainingData
 
 #[no_mangle]
-pub extern "C" fn training_data_new() -> *mut TrainingData<'static> {
-    Box::into_raw(Box::new(TrainingData::new()))
+pub extern fn training_data_new() -> *mut TrainingData {
+    let mut obj = TrainingData::new();
+    Box::into_raw(Box::new(obj))
+}
+
+#[no_mangle]
+pub extern fn training_data_init<'a>(ptr: *const c_double, len: usize) -> *mut TrainingData<'a> {
+    let mut obj = TrainingData::new();
+    assert!(!ptr.is_null());
+    let array = unsafe { slice::from_raw_parts(ptr, len) };
+    obj.add_data(array);
+    Box::into_raw(Box::new(obj))
 }
 
 #[no_mangle]
@@ -149,7 +165,7 @@ pub extern "C" fn training_data_free(ptr: *mut TrainingData) {
 }
 
 #[no_mangle]
-pub extern "C" fn training_data_add(mut training_data: *mut TrainingData,
+pub extern "C" fn training_data_add(training_data: *mut TrainingData,
                                     ptr: *const c_double, len: usize) {
     assert!(!ptr.is_null());
     assert!(!training_data.is_null());
@@ -159,11 +175,12 @@ pub extern "C" fn training_data_add(mut training_data: *mut TrainingData,
 }
 
 #[no_mangle]
-pub extern "C" fn training_data_to_string(mut training_data: *mut TrainingData) -> *mut c_char {
+pub extern "C" fn training_data_to_u8(training_data: *mut TrainingData) -> *const u8 {
     assert!(!training_data.is_null());
-    let str = unsafe { (*training_data).to_string() };
-    let c_string = CString::new(str);
-    c_string.unwrap().into_raw()
+    let str = unsafe { (*training_data).to_string() } + &"\0";
+    let c_str = &str[..];
+    let result = c_str.as_ptr();
+    result
 }
 
 // Population
@@ -207,15 +224,8 @@ pub extern "C" fn sum(a: c_longlong, b: c_longlong) -> c_longlong {
 }
 
 #[no_mangle]
-pub extern "C" fn sum_array(ptr: *const c_double, len: usize) -> c_double {
+pub extern "C" fn sum_array(ptr: *const c_longlong, len: usize) -> c_longlong {
     assert!(!ptr.is_null());
     let array = unsafe { slice::from_raw_parts(ptr, len) };
     array.iter().sum()
 }
-
-//#[no_mangle]
-//pub extern "C" fn sum_array_of_arrays(ptr: *const c_double, len: usize) -> c_double {
-//    assert!(!ptr.is_null());
-//    let array_of_arrays = unsafe { slice::from_raw_parts(ptr, len) };
-//    array.iter().sum()
-//}

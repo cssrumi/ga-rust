@@ -1,5 +1,5 @@
 import ctypes
-from ga._native import lib
+from ga._native import lib, ffi
 
 
 def test():
@@ -18,13 +18,27 @@ class Individual:
         lib.individual_free(self._pointer)
 
     def __str__(self):
-        ptr = lib.individual_to_string(self._pointer)
-        print(ptr)
-        return str(ptr)
-        # try:
-        #     return ctypes.cast(ptr, ctypes.c_char_p).value.decode('utf-8')
-        # finally:
-        #     lib.string_free(ptr)
+        cdata = lib.individual_to_u8(self._pointer)
+        r_str = RStr(cdata)
+        return str(r_str)
+
+    def to_rstr(self):
+        cdata = lib.individual_to_u8(self._pointer)
+        r_str = RStr(cdata)
+        return r_str
+
+
+class RStr:
+    def __init__(self, cdata):
+        self._ptr = cdata
+
+    def __str__(self):
+        s = ffi.string(self._ptr)
+        r = s.decode("utf-8")
+        return r
+
+    def __del__(self):
+        lib.string_free(self._ptr)
 
 
 class TrainingData:
@@ -52,4 +66,8 @@ class TrainingData:
         lib.training_data_free(self._pointer)
 
     def __str__(self):
-        lib.training_data_to_string(self._pointer)
+        cdata = lib.training_data_to_string(self._pointer)
+        s = ffi.string(cdata)
+        s = s.decode("utf-8")
+        lib.string_free(cdata)
+        return s

@@ -14,7 +14,7 @@ def bench(func: callable, args: list):
 
 
 def sum_array():
-    arr = [a * 3 + 1 for a in range(90000)]
+    arr = [a * 3 + 1 for a in range(900000)]
 
     bench(ga.sum_array, [arr])
     bench(sum, [arr])

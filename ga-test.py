@@ -1,8 +1,25 @@
+import ctypes
+import time
+
 from ga import TrainingData, Individual
 
 
-i = Individual()
-print(i)
+def test_str():
+    i = Individual()
+    r = i.to_rstr()
+
+    ptr = r._ptr
+
+    print(r)
+
+    r.__del__()
+    time.sleep(1)
+
+    # empty
+    print(r)
+    # error
+    print(ptr)
+
 #
 # t = TrainingData(size=2)
 #
