@@ -21,12 +21,12 @@ class Individual:
 
     def __str__(self):
         cdata = lib.individual_to_c_char(self._ptr)
-        r_str = RStr(cdata)
+        r_str = CStr(cdata)
         return str(r_str)
 
-    def to_rstr(self):
+    def to_cstr(self):
         cdata = lib.individual_to_c_char(self._ptr)
-        r_str = RStr(cdata)
+        r_str = CStr(cdata)
         return r_str
 
 
@@ -71,16 +71,16 @@ class TrainingData:
 
     def __str__(self):
         cdata = lib.training_data_to_c_char(self._ptr)
-        r_str = RStr(cdata)
+        r_str = CStr(cdata)
         return str(r_str)
 
-    def to_rstr(self):
+    def to_cstr(self):
         cdata = lib.training_data_to_c_char(self._ptr)
-        r_str = RStr(cdata)
+        r_str = CStr(cdata)
         return r_str
 
 
-class RStr:
+class CStr:
     def __init__(self, cdata):
         self._ptr = cdata
 

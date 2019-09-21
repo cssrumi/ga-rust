@@ -7,7 +7,7 @@ from ga import TrainingData, Individual
 def test_str():
     i = Individual()
     print(i)
-    r = i.to_rstr()
+    r = i.to_cstr()
     print(r)
     #
     # ptr = r._ptr

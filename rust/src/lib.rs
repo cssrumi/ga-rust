@@ -62,9 +62,13 @@ impl Individual {
 impl ToString for Individual {
     fn to_string(&self) -> String {
         let mut as_string = String::from("<Individual: <genotype: [");
-        for value in self.genotype.iter() {
-            as_string += &value.to_string();
-            as_string += &", ";
+        if self.genotype.len() > 0 {
+            for value in self.genotype.iter() {
+                as_string += &value.to_string();
+                as_string += &", ";
+            }
+            as_string.pop();
+            as_string.pop();
         }
         as_string += &"]>>";
         as_string
@@ -123,9 +127,13 @@ impl ToString for TrainingData {
         let mut as_string = String::from("<TrainingData: <data: [");
         for array in self.data.iter() {
             as_string += &"[";
-            for value in array.iter() {
-                as_string += &value.to_string();
-                as_string += &", ";
+            if array.len() > 0 {
+                for value in array.iter() {
+                    as_string += &value.to_string();
+                    as_string += &", ";
+                }
+                as_string.pop();
+                as_string.pop();
             }
             as_string += &"], "
         }
@@ -191,7 +199,7 @@ pub extern "C" fn training_data_to_u8(training_data: *mut TrainingData) -> *cons
 pub struct Population {
     individuals: Vec<Individual>,
     best: Individual,
-    training_data: Vec<Vec<f64>>,
+    training_data: TrainingData,
 }
 
 // External functions for Population
@@ -211,6 +219,7 @@ pub fn struct_to_c_char<T: ToString>(ptr: *mut T) -> *const c_char {
     std::mem::forget(c_str);
     p
 }
+
 pub fn struct_to_u8<T: ToString>(ptr: *mut T) -> *const u8 {
     let string = unsafe { (*ptr).to_string() } + &"\0";
     let str_slice = &string[..];
