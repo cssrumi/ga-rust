@@ -1,4 +1,6 @@
 import ctypes
+from typing import List, Optional, Union
+
 from ga._native import lib, ffi
 
 
@@ -12,18 +14,68 @@ def sum_array(arr: list):
 
 class Individual:
     def __init__(self):
-        self._pointer = lib.individual_new()
+        self._ptr = lib.individual_new()
 
     def __del__(self):
-        lib.individual_free(self._pointer)
+        lib.individual_free(self._ptr)
 
     def __str__(self):
-        cdata = lib.individual_to_u8(self._pointer)
+        cdata = lib.individual_to_c_char(self._ptr)
         r_str = RStr(cdata)
         return str(r_str)
 
     def to_rstr(self):
-        cdata = lib.individual_to_u8(self._pointer)
+        cdata = lib.individual_to_c_char(self._ptr)
+        r_str = RStr(cdata)
+        return r_str
+
+
+class TrainingData:
+    def __init__(self, data: List[list], row_size: int):
+        self._row_size = row_size
+        data = self.validate_data(data)
+        self._ptr = lib.training_data_init(
+            data, len(data), row_size
+        )
+
+    @staticmethod
+    def row_to_double(row: list) -> Optional[list]:
+        new_data = []
+        for value in row:
+            try:
+                new_data.append(float(value))
+            except (TypeError, ValueError):
+                return None
+        c_data = ffi.new("double[]", new_data)
+        return c_data
+
+    def validate_data(self, data: List[list]) -> Optional[List[List[float]]]:
+        data = filter(lambda row: len(row) == self._row_size, data)
+        data = map(TrainingData.row_to_double, data)
+        data = filter(lambda row: row, data)
+        if data:
+            data = list(data)
+        return data
+
+    def add(self, data: Union[List[list], list]) -> None:
+        if len(data):
+            if not isinstance(data[0], list):
+                data = [data]
+        data = self.validate_data(data)
+        print(data)
+        for row in data:
+            lib.training_data_add(self._ptr, row, self._row_size)
+
+    def __del__(self):
+        lib.training_data_free(self._ptr)
+
+    def __str__(self):
+        cdata = lib.training_data_to_c_char(self._ptr)
+        r_str = RStr(cdata)
+        return str(r_str)
+
+    def to_rstr(self):
+        cdata = lib.training_data_to_c_char(self._ptr)
         r_str = RStr(cdata)
         return r_str
 
@@ -39,35 +91,3 @@ class RStr:
 
     def __del__(self):
         lib.string_free(self._ptr)
-
-
-class TrainingData:
-    def __init__(self, size=0):
-        self._pointer = lib.training_data_new()
-        self.size = size
-
-    @staticmethod
-    def to_float(data: list):
-        new_data = []
-        for value in data:
-            try:
-                new_data.append(float(value))
-            except (TypeError, ValueError):
-                return
-        return new_data
-
-    def add(self, data: list):
-        data = map(TrainingData.to_float, data)
-        data = filter(lambda x: len(x) == self.size, data)
-        for d in data:
-            lib.training_data_add(d, self._pointer)
-
-    def __del__(self):
-        lib.training_data_free(self._pointer)
-
-    def __str__(self):
-        cdata = lib.training_data_to_string(self._pointer)
-        s = ffi.string(cdata)
-        s = s.decode("utf-8")
-        lib.string_free(cdata)
-        return s
