@@ -62,7 +62,6 @@ class TrainingData:
             if not isinstance(data[0], list):
                 data = [data]
         data = self.validate_data(data)
-        print(data)
         for row in data:
             lib.training_data_add(self._ptr, row, self._row_size)
 
