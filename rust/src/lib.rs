@@ -1,6 +1,7 @@
 extern crate rand;
-//extern crate libc;
+extern crate rayon;
 
+use rayon::prelude::*;
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use std::os::raw::{c_longlong, c_double, c_char};
@@ -8,6 +9,8 @@ use std::slice;
 use std::ffi::{CString, CStr};
 use std::io::Read;
 use std::collections::VecDeque;
+use std::ops::Range;
+use std::cmp::Ordering::Equal;
 
 pub struct Individual {
     genotype: Vec<c_double>,
@@ -21,7 +24,7 @@ impl Individual {
             fitness: 0.0,
         }
     }
-    fn random(gen_number: usize) -> Individual {
+    fn random(gen_number: usize, training_data: &TrainingData) -> Individual {
         let mut rng = thread_rng();
         let mut genotype = Vec::new();
         for _ in 0..gen_number {
@@ -29,25 +32,24 @@ impl Individual {
             let gen = value * 2.0 - 1.0;
             genotype.push(gen);
         }
+        let fitness = calculate_fitness(&genotype, training_data);
         Individual {
             genotype,
-            fitness: 0.0,
+            fitness,
         }
     }
-    fn calculate_fitness(&mut self, training_data: &TrainingData) {
-        self.fitness = calculate_fitness(&self.genotype, training_data);
-    }
-    fn crossover(&self, other: &Individual) -> Individual {
+    fn crossover(&self, other: &Individual, training_data: &TrainingData) -> Individual {
         let mut new_genotype = Vec::new();
         for (a, b) in self.genotype.iter().zip(other.genotype.iter()) {
             new_genotype.push((a + b) / 2.0);
         }
+        let fitness = calculate_fitness(&new_genotype, training_data);
         Individual {
             genotype: new_genotype,
-            fitness: 0.0,
+            fitness,
         }
     }
-    fn mutate(&self) -> Individual {
+    fn mutate(&self, training_data: &TrainingData) -> Individual {
         let mut rng = thread_rng();
         let mut new_genotype = vec![0 as c_double; self.genotype.len()];
         let shuffled_indexes: Vec<usize> = (0..self.genotype.len()).collect();
@@ -63,9 +65,10 @@ impl Individual {
                 new_genotype[index] = new_value;
             }
         }
+        let fitness = calculate_fitness(&new_genotype, training_data);
         Individual {
             genotype: new_genotype,
-            fitness: 0.0,
+            fitness,
         }
     }
     fn predict_value(&self, data: &Vec<f64>) -> f64 {
@@ -232,67 +235,96 @@ pub extern "C" fn training_data_to_u8(training_data: *mut TrainingData) -> *cons
     struct_to_u8(training_data)
 }
 
-// Generation
-pub struct Generation {
-    individuals: Vec<Individual>,
-}
-
-impl Generation {
-    fn new() -> Generation {
-        Generation {
-            individuals: Vec::new(),
-        }
-    }
-    fn init_random(init_size: usize, genotype_size: usize) -> Generation {
-        let mut individuals = Vec::new();
-        for _ in 0..init_size {
-            individuals.push(Individual::random(genotype_size))
-        }
-        Generation {
-            individuals,
-        }
-    }
-    fn from_vec(individuals: Vec<Individual>) -> Generation {
-        Generation {
-            individuals
-        }
-    }
-    fn calculate_fitness(&mut self, training_data: &TrainingData) {
-        for mut individual in self.individuals.iter_mut() {
-            individual.calculate_fitness(training_data)
-        }
-    }
-}
-
 // Population
 
 pub struct Population {
-    generations: VecDeque<Generation>,
+    individuals: Vec<Individual>,
     best: Individual,
     training_data: TrainingData,
     header: Vec<String>,
     max_children_size: usize,
     genotype_size: usize,
+    crossover_chance: c_double,
+    mutation_chance: c_double,
+    max_age: usize,
 }
 
 impl Population {
     fn new(training_data: TrainingData, initial_population_size: usize,
            max_children_size: usize) -> Population {
         let genotype_size = training_data.genotype_size;
-        let mut initial_population = Generation::init_random(
-            initial_population_size, genotype_size,
+        let initial_population = Population::init_random(
+            initial_population_size, genotype_size, &training_data,
         );
-        initial_population.calculate_fitness(&training_data);
-        let mut generations = VecDeque::new();
-        generations.push_back(initial_population);
         Population {
-            generations,
+            individuals: initial_population,
             best: Individual::new(),
             training_data,
             header: Vec::new(),
             max_children_size,
             genotype_size,
+            crossover_chance: 0.5,
+            mutation_chance: 0.5,
+            max_age: 7,
         }
+    }
+    fn init_random(init_size: usize, genotype_size: usize,
+                   training_data: &TrainingData) -> Vec<Individual> {
+        let individuals = (0..init_size).into_par_iter()
+            .map(|_| Individual::random(genotype_size, training_data))
+            .collect();
+        individuals
+    }
+    fn evolve_by_rank(&mut self) {
+        // Reverse sort because the bigger fitness is the worse
+        self.individuals.par_sort_by(
+            |a, b| b.fitness
+                .partial_cmp(&a.fitness)
+                .unwrap_or(Equal));
+        let population_size = self.individuals.len();
+        let rank_sum = (population_size * (population_size + 1) / 2) as f64;
+        let rank_vec: Vec<f64> = (1..population_size + 1)
+            .into_par_iter()
+            .map(|i| {
+//                let i = i as u32;
+                let rv: u32 = (1..i as u32 + 1).into_iter().sum();
+                let rv = rv as f64 / rank_sum;
+                rv
+            })
+            .collect();
+        // generate new generation of Individuals
+        let mut children: Vec<Individual> = (0..self.max_children_size)
+            .into_par_iter()
+            .filter(|_| {
+                let mut rng = thread_rng();
+                let crossover: f64 = rng.gen();
+                crossover <= self.crossover_chance
+            })
+            .map(|_| {
+                let mother = &self.individuals[
+                    get_parent_id(population_size, &rank_vec)];
+                let father = &self.individuals[
+                    get_parent_id(population_size, &rank_vec)];
+
+                mother.crossover(&father, &self.training_data)
+            }).collect();
+        // generate mutated individuals
+        let mut mutated: Vec<Individual> = (0..self.max_children_size)
+            .into_par_iter()
+            .filter(|_| {
+                let mut rng = thread_rng();
+                let mutate: f64 = rng.gen();
+                mutate <= self.mutation_chance
+            })
+            .map(|_| {
+                let to_mutate = &self.individuals[
+                    get_parent_id(population_size, &rank_vec)];
+                to_mutate.mutate(&self.training_data)
+            })
+            .collect();
+        // Add both to population
+        self.individuals.append(&mut children);
+        self.individuals.append(&mut mutated);
     }
 }
 
@@ -316,15 +348,28 @@ pub extern "C" fn population_set_header(population: *mut Population,
 // Other useful tools
 
 fn calculate_fitness(genotype: &Vec<c_double>, training_data: &TrainingData) -> c_double {
+    let index_of_value = genotype.len();
     let mut final_fitness: c_double = 0.0;
     for row in training_data.data.iter() {
         let mut fitness: c_double = 0.0;
         for (gen, col) in genotype.iter().zip(row.iter()) {
             fitness += gen * col;
         }
+        fitness = row[index_of_value] - fitness;
         final_fitness += fitness.abs();
     }
     final_fitness
+}
+
+pub fn get_parent_id(population_size: usize, rank_vec: &Vec<f64>) -> usize {
+    let mut rng = thread_rng();
+    let value: f64 = rng.gen();
+    for (i, rank) in rank_vec.iter().enumerate() {
+        if value > *rank {
+            return i;
+        }
+    }
+    population_size
 }
 
 pub fn copy_shuffle<T: Clone>(vec: &Vec<T>) -> Vec<T> {
