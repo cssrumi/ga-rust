@@ -90,10 +90,10 @@ impl Individual {
         }
     }
 }
-
+// TODO Fix String representation of this function
 impl ToString for Individual {
     fn to_string(&self) -> String {
-        let mut as_string = String::from("<Individual: <genotype: [");
+        let mut as_string = String::from("<Individual: \n<genotype: [");
         if self.genotype.len() > 0 {
             for value in self.genotype.iter() {
                 as_string += &value.to_string();
@@ -102,7 +102,14 @@ impl ToString for Individual {
             as_string.pop();
             as_string.pop();
         }
-        as_string += &"]>>";
+        as_string += &"]>";
+        as_string += &"\n<fitness: ";
+        as_string += &self.fitness.to_string();
+        as_string += &">";
+        as_string += &"\n<age: ";
+        as_string += &self.age.to_string();
+        as_string += &">";
+        as_string += &"\n>";
         as_string
     }
 }
@@ -261,6 +268,9 @@ pub struct Population {
 }
 
 impl Population {
+    // TODO Add function that create instance of Population with empty training data
+
+    // TODO change this function name to from_trainig_data
     fn new(training_data: TrainingData, initial_population_size: usize,
            max_children_size: usize) -> Population {
         let genotype_size = training_data.genotype_size;
@@ -287,7 +297,7 @@ impl Population {
         individuals
     }
     fn increment_age(&mut self) {
-        self.individuals.par_iter_mut().for_each(|i| i.age+=1);
+        self.individuals.par_iter_mut().for_each(|i| i.age += 1);
     }
     fn decrement_population(&mut self) {
         self.individuals = self.individuals
@@ -352,25 +362,57 @@ impl Population {
         self.individuals.append(&mut mutated);
     }
 }
+// TODO Fix this function and add header
+impl ToString for Population {
+    fn to_string(&self) -> String{
+        let mut as_string = String::from("<Population: \n<Individuals :[");
+        if self.individuals.len() > 0 {
+            for value in self.individuals.iter() {
+                as_string += &value.to_string();
+                as_string += &", ";
+            }
+            as_string.pop();
+            as_string.pop();
+        }
+        as_string += &"]>,\n<Best: ";
+        as_string += &self.best.to_string();
+        as_string += &">,\n";
+        as_string += &self.training_data.to_string();
+        as_string += &"\n>";
+        as_string
+    }
+}
 
 // External functions for Population
 
-// TODO
+// TODO Add External function from_training_data
+
+// TODO Rewrite this function to one that don't require training data and create empty training data
 #[no_mangle]
-pub extern "C" fn population_new(training_data_ptr: *mut TrainingData, initial_population_size: usize,
+pub extern "C" fn population_new(training_data_ptr: *mut TrainingData,
+                                 initial_population_size: usize,
                                  max_children_size: usize) -> *mut Population {
-    assert!(!training_data.is_null());
-//    let training_data_boxed = unsafe { Box::from_raw(training_data_ptr) };
-//    let training_data = training_data_boxed.get_mut();
-//    let training_data;
-//    unsafe { training_data = training_data_ptr };
-//    let training_data = training_data
-    Box::into_raw(Box::new(Population::new(training_data, initial_population_size, max_children_size)))
+    assert!(!training_data_ptr.is_null());
+    let mut training_data = unsafe { Box::from_raw(training_data_ptr) };
+    Box::into_raw(Box::new(
+        Population::new(*training_data, initial_population_size, max_children_size)
+    ))
+}
+
+// TODO Add External function create_training_data that create td and pass it to the population ptr
+
+// TODO Add External functions for setting mutation and crossover chances
+
+#[no_mangle]
+pub extern "C" fn population_free(population: *mut Population) {
+    if population.is_null() { return; }
+    unsafe { Box::from_raw(population); }
 }
 
 #[no_mangle]
-pub extern "C" fn population_evolve(population_ptr: *mut Population) {
-    unsafe { (*population_ptr).evolve_by_rank() };
+pub extern "C" fn population_evolve(population: *mut Population) {
+    if population.is_null() { return; }
+    unsafe { (*population).evolve_by_rank() };
 }
 
 #[no_mangle]
@@ -386,6 +428,18 @@ pub extern "C" fn population_set_header(population: *mut Population,
         header.push(string)
     }
     unsafe { (*population).header = header };
+}
+
+#[no_mangle]
+pub extern "C" fn population_to_c_char(population: *mut Population) -> *const c_char {
+    assert!(!population.is_null());
+    struct_to_c_char(population)
+}
+
+#[no_mangle]
+pub extern "C" fn population_data_to_u8(population: *mut Population) -> *const u8 {
+    assert!(!population.is_null());
+    struct_to_u8(population)
 }
 
 // Other useful tools
@@ -412,7 +466,7 @@ pub fn get_parent_id(population_size: usize, rank_vec: &Vec<f64>) -> usize {
             return i;
         }
     }
-    population_size
+    population_size - 1
 }
 
 pub fn copy_shuffle<T: Clone>(vec: &Vec<T>) -> Vec<T> {
@@ -445,23 +499,4 @@ pub extern "C" fn string_free(s: *mut c_char) {
         if s.is_null() { return; }
         CString::from_raw(s)
     };
-}
-
-// test functions
-
-#[no_mangle]
-pub extern "C" fn a_function_from_rust() -> i32 {
-    42
-}
-
-#[no_mangle]
-pub extern "C" fn sum(a: c_longlong, b: c_longlong) -> c_longlong {
-    a + b
-}
-
-#[no_mangle]
-pub extern "C" fn sum_array(ptr: *const c_longlong, len: usize) -> c_longlong {
-    assert!(!ptr.is_null());
-    let array = unsafe { slice::from_raw_parts(ptr, len) };
-    array.iter().sum()
 }

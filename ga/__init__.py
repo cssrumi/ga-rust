@@ -30,6 +30,8 @@ class Individual:
         return r_str
 
 
+# TODO Represent this class as a function for Population
+#  (because of error while accessing it after passing it as ptr to Population)
 class TrainingData:
     def __init__(self, data: List[list], row_size: int):
         self._row_size = row_size
@@ -75,6 +77,27 @@ class TrainingData:
 
     def to_cstr(self):
         cdata = lib.training_data_to_c_char(self._ptr)
+        r_str = CStr(cdata)
+        return r_str
+
+
+class Population:
+    def __init__(self, training_data: TrainingData, initial_population_size: int, max_children_size: int):
+        self._ptr = lib.population_new(training_data._ptr, initial_population_size, max_children_size)
+
+    def evolve(self):
+        lib.population_evolve(self._ptr)
+
+    def __del__(self):
+        lib.population_free(self._ptr)
+
+    def __str__(self):
+        cdata = lib.population_to_c_char(self._ptr)
+        r_str = CStr(cdata)
+        return str(r_str)
+
+    def to_cstr(self):
+        cdata = lib.population_to_c_char(self._ptr)
         r_str = CStr(cdata)
         return r_str
 
