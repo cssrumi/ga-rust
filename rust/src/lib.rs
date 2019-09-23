@@ -7,14 +7,14 @@ use rand::seq::SliceRandom;
 use std::os::raw::{c_longlong, c_double, c_char};
 use std::slice;
 use std::ffi::{CString, CStr};
-use std::io::Read;
-use std::collections::VecDeque;
-use std::ops::Range;
 use std::cmp::Ordering::Equal;
+use std::borrow::Borrow;
+use std::ops::Deref;
 
 pub struct Individual {
     genotype: Vec<c_double>,
     fitness: c_double,
+    age: usize,
 }
 
 impl Individual {
@@ -22,6 +22,7 @@ impl Individual {
         Individual {
             genotype: Vec::new(),
             fitness: 0.0,
+            age: 0,
         }
     }
     fn random(gen_number: usize, training_data: &TrainingData) -> Individual {
@@ -36,6 +37,7 @@ impl Individual {
         Individual {
             genotype,
             fitness,
+            age: 0,
         }
     }
     fn crossover(&self, other: &Individual, training_data: &TrainingData) -> Individual {
@@ -47,6 +49,7 @@ impl Individual {
         Individual {
             genotype: new_genotype,
             fitness,
+            age: 0,
         }
     }
     fn mutate(&self, training_data: &TrainingData) -> Individual {
@@ -69,6 +72,7 @@ impl Individual {
         Individual {
             genotype: new_genotype,
             fitness,
+            age: 0,
         }
     }
     fn predict_value(&self, data: &Vec<f64>) -> f64 {
@@ -77,6 +81,13 @@ impl Individual {
             result += gen * value;
         }
         result
+    }
+    fn dup(&self) -> Individual {
+        Individual {
+            genotype: self.genotype.to_owned(),
+            fitness: self.fitness,
+            age: self.age,
+        }
     }
 }
 
@@ -253,7 +264,7 @@ impl Population {
     fn new(training_data: TrainingData, initial_population_size: usize,
            max_children_size: usize) -> Population {
         let genotype_size = training_data.genotype_size;
-        let initial_population = Population::init_random(
+        let initial_population = Population::random_individuals(
             initial_population_size, genotype_size, &training_data,
         );
         Population {
@@ -268,12 +279,24 @@ impl Population {
             max_age: 7,
         }
     }
-    fn init_random(init_size: usize, genotype_size: usize,
-                   training_data: &TrainingData) -> Vec<Individual> {
+    fn random_individuals(init_size: usize, genotype_size: usize,
+                          training_data: &TrainingData) -> Vec<Individual> {
         let individuals = (0..init_size).into_par_iter()
             .map(|_| Individual::random(genotype_size, training_data))
             .collect();
         individuals
+    }
+    fn increment_age(&mut self) {
+        self.individuals.par_iter_mut().for_each(|i| i.age+=1);
+    }
+    fn decrement_population(&mut self) {
+        self.individuals = self.individuals
+            .par_iter()
+            .filter(|i| i.age < self.max_age)
+            .collect::<Vec<&Individual>>()
+            .into_par_iter()
+            .map(Individual::dup)
+            .collect();
     }
     fn evolve_by_rank(&mut self) {
         // Reverse sort because the bigger fitness is the worse
@@ -322,6 +345,8 @@ impl Population {
                 to_mutate.mutate(&self.training_data)
             })
             .collect();
+        self.increment_age();
+        self.decrement_population();
         // Add both to population
         self.individuals.append(&mut children);
         self.individuals.append(&mut mutated);
@@ -329,6 +354,24 @@ impl Population {
 }
 
 // External functions for Population
+
+// TODO
+#[no_mangle]
+pub extern "C" fn population_new(training_data_ptr: *mut TrainingData, initial_population_size: usize,
+                                 max_children_size: usize) -> *mut Population {
+    assert!(!training_data.is_null());
+//    let training_data_boxed = unsafe { Box::from_raw(training_data_ptr) };
+//    let training_data = training_data_boxed.get_mut();
+//    let training_data;
+//    unsafe { training_data = training_data_ptr };
+//    let training_data = training_data
+    Box::into_raw(Box::new(Population::new(training_data, initial_population_size, max_children_size)))
+}
+
+#[no_mangle]
+pub extern "C" fn population_evolve(population_ptr: *mut Population) {
+    unsafe { (*population_ptr).evolve_by_rank() };
+}
 
 #[no_mangle]
 pub extern "C" fn population_set_header(population: *mut Population,
