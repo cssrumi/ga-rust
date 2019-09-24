@@ -8,8 +8,7 @@ use std::os::raw::{c_longlong, c_double, c_char};
 use std::slice;
 use std::ffi::{CString, CStr};
 use std::cmp::Ordering::Equal;
-use std::borrow::Borrow;
-use std::ops::Deref;
+use std::iter::FromIterator;
 
 pub struct Individual {
     genotype: Vec<c_double>,
@@ -90,6 +89,7 @@ impl Individual {
         }
     }
 }
+
 // TODO Fix String representation of this function
 impl ToString for Individual {
     fn to_string(&self) -> String {
@@ -270,7 +270,7 @@ pub struct Population {
 impl Population {
     // TODO Add function that create instance of Population with empty training data
 
-    // TODO change this function name to from_trainig_data
+    // TODO change this function name to from_training_data
     fn new(training_data: TrainingData, initial_population_size: usize,
            max_children_size: usize) -> Population {
         let genotype_size = training_data.genotype_size;
@@ -300,26 +300,38 @@ impl Population {
         self.individuals.par_iter_mut().for_each(|i| i.age += 1);
     }
     fn decrement_population(&mut self) {
-        self.individuals = self.individuals
-            .par_iter()
-            .filter(|i| i.age < self.max_age)
-            .collect::<Vec<&Individual>>()
-            .into_par_iter()
-            .map(Individual::dup)
-            .collect();
+        let to_old_count = self.individuals.par_iter()
+            .filter(|i| i.age >= self.max_age)
+            .count();
+        let mut individuals_slice = &self.individuals[to_old_count..self.individuals.len()];
+//        for (dst, src) in part.iter_mut().zip(&data[1..4]) {
+//            *dst = *src;
+//        }
+        let mut part: Vec<Individual> = Vec::new();
+        for (dst, src) in part.iter_mut().zip(individuals_slice) {
+            *dst = *src;
+        }
+//        self.individuals = self.individuals
+//            .par_iter()
+//            .filter(|i| i.age < self.max_age - 1)
+//            .collect::<Vec<&Individual>>()
+//            .into_par_iter()
+//            .map(Individual::dup)
+//            .collect();
     }
+    // TODO To Sort use temporary vec of references
     fn evolve_by_rank(&mut self) {
         // Reverse sort because the bigger fitness is the worse
-        self.individuals.par_sort_by(
-            |a, b| b.fitness
-                .partial_cmp(&a.fitness)
-                .unwrap_or(Equal));
+        let mut sorted: Vec<&Individual> = self.individuals.into_iter().collect::<Vec<&Individual>>();
+//            |a, b| b.fitness
+//                .partial_cmp(&a.fitness)
+//                .unwrap_or(Equal))
+//            .collect();
         let population_size = self.individuals.len();
         let rank_sum = (population_size * (population_size + 1) / 2) as f64;
         let rank_vec: Vec<f64> = (1..population_size + 1)
             .into_par_iter()
             .map(|i| {
-//                let i = i as u32;
                 let rv: u32 = (1..i as u32 + 1).into_iter().sum();
                 let rv = rv as f64 / rank_sum;
                 rv
@@ -334,9 +346,9 @@ impl Population {
                 crossover <= self.crossover_chance
             })
             .map(|_| {
-                let mother = &self.individuals[
+                let mother = sorted[
                     get_parent_id(population_size, &rank_vec)];
-                let father = &self.individuals[
+                let father = sorted[
                     get_parent_id(population_size, &rank_vec)];
 
                 mother.crossover(&father, &self.training_data)
@@ -355,16 +367,17 @@ impl Population {
                 to_mutate.mutate(&self.training_data)
             })
             .collect();
-        self.increment_age();
         self.decrement_population();
+        self.increment_age();
         // Add both to population
         self.individuals.append(&mut children);
         self.individuals.append(&mut mutated);
     }
 }
+
 // TODO Fix this function and add header
 impl ToString for Population {
-    fn to_string(&self) -> String{
+    fn to_string(&self) -> String {
         let mut as_string = String::from("<Population: \n<Individuals :[");
         if self.individuals.len() > 0 {
             for value in self.individuals.iter() {
