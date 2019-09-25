@@ -268,11 +268,21 @@ pub struct Population {
 }
 
 impl Population {
-    // TODO Add function that create instance of Population with empty training data
-
-    // TODO change this function name to from_training_data
-    fn new(training_data: TrainingData, initial_population_size: usize,
-           max_children_size: usize) -> Population {
+    fn new() -> Population {
+        Population {
+            individuals: Vec::new(),
+            best: Individual::new(),
+            training_data: TrainingData::new(),
+            header: Vec::new(),
+            max_children_size: 0,
+            genotype_size: 0,
+            crossover_chance: 0.5,
+            mutation_chance: 0.5,
+            max_age: 7,
+        }
+    }
+    fn from_training_data(training_data: TrainingData, initial_population_size: usize,
+                          max_children_size: usize) -> Population {
         let genotype_size = training_data.genotype_size;
         let initial_population = Population::random_individuals(
             initial_population_size, genotype_size, &training_data,
@@ -300,33 +310,20 @@ impl Population {
         self.individuals.par_iter_mut().for_each(|i| i.age += 1);
     }
     fn decrement_population(&mut self) {
-        let to_old_count = self.individuals.par_iter()
-            .filter(|i| i.age >= self.max_age)
-            .count();
-        let mut individuals_slice = &self.individuals[to_old_count..self.individuals.len()];
-//        for (dst, src) in part.iter_mut().zip(&data[1..4]) {
-//            *dst = *src;
-//        }
-        let mut part: Vec<Individual> = Vec::new();
-        for (dst, src) in part.iter_mut().zip(individuals_slice) {
-            *dst = *src;
-        }
-//        self.individuals = self.individuals
-//            .par_iter()
-//            .filter(|i| i.age < self.max_age - 1)
-//            .collect::<Vec<&Individual>>()
-//            .into_par_iter()
-//            .map(Individual::dup)
-//            .collect();
+        self.individuals = self.individuals
+            .par_iter()
+            .filter(|i| i.age < self.max_age - 1)
+            .collect::<Vec<&Individual>>()
+            .into_par_iter()
+            .map(Individual::dup)
+            .collect();
     }
-    // TODO To Sort use temporary vec of references
     fn evolve_by_rank(&mut self) {
         // Reverse sort because the bigger fitness is the worse
-        let mut sorted: Vec<&Individual> = self.individuals.into_iter().collect::<Vec<&Individual>>();
-//            |a, b| b.fitness
-//                .partial_cmp(&a.fitness)
-//                .unwrap_or(Equal))
-//            .collect();
+        self.individuals.par_sort_by(
+            |a, b| b.fitness
+                .partial_cmp(&a.fitness)
+                .unwrap_or(Equal));
         let population_size = self.individuals.len();
         let rank_sum = (population_size * (population_size + 1) / 2) as f64;
         let rank_vec: Vec<f64> = (1..population_size + 1)
@@ -346,9 +343,9 @@ impl Population {
                 crossover <= self.crossover_chance
             })
             .map(|_| {
-                let mother = sorted[
+                let mother = &self.individuals[
                     get_parent_id(population_size, &rank_vec)];
-                let father = sorted[
+                let father = &self.individuals[
                     get_parent_id(population_size, &rank_vec)];
 
                 mother.crossover(&father, &self.training_data)
@@ -398,34 +395,46 @@ impl ToString for Population {
 
 // External functions for Population
 
-// TODO Add External function from_training_data
-
-// TODO Rewrite this function to one that don't require training data and create empty training data
 #[no_mangle]
-pub extern "C" fn population_new(training_data_ptr: *mut TrainingData,
-                                 initial_population_size: usize,
-                                 max_children_size: usize) -> *mut Population {
+pub extern "C" fn population_from_training_data(training_data_ptr: *mut TrainingData,
+                                                initial_population_size: usize,
+                                                max_children_size: usize) -> *mut Population {
     assert!(!training_data_ptr.is_null());
     let mut training_data = unsafe { Box::from_raw(training_data_ptr) };
     Box::into_raw(Box::new(
-        Population::new(*training_data, initial_population_size, max_children_size)
+        Population::from_training_data(*training_data, initial_population_size, max_children_size)
     ))
 }
 
-// TODO Add External function create_training_data that create td and pass it to the population ptr
-
-// TODO Add External functions for setting mutation and crossover chances
-
 #[no_mangle]
-pub extern "C" fn population_free(population: *mut Population) {
-    if population.is_null() { return; }
-    unsafe { Box::from_raw(population); }
+pub extern "C" fn population_set_training_data(population_ptr: *mut Population,
+                                               training_data_ptr: *mut TrainingData) {
+    assert!(!training_data_ptr.is_null());
+    assert!(!population_ptr.is_null());
+    let mut training_data = unsafe { Box::from_raw(training_data_ptr) };
+    unsafe { (*population_ptr).training_data = *training_data };
 }
 
-#[no_mangle]
-pub extern "C" fn population_evolve(population: *mut Population) {
-    if population.is_null() { return; }
-    unsafe { (*population).evolve_by_rank() };
+pub extern "C" fn population_set_mutation_chance(population_ptr: *mut Population,
+                                                 mutation_chance: c_double) {
+    assert!(!population_ptr.is_null());
+    unsafe { (*population_ptr).mutation_chance = mutation_chance };
+}
+
+pub extern "C" fn population_set_crossover_chance(population_ptr: *mut Population,
+                                                  crossover_chance: c_double) {
+    assert!(!population_ptr.is_null());
+    unsafe { (*population_ptr).crossover_chance = crossover_chance };
+}
+
+pub extern "C" fn population_set_max_age(population_ptr: *mut Population, max_age: usize) {
+    assert!(!population_ptr.is_null());
+    unsafe { (*population_ptr).max_age = max_age };
+}
+
+pub extern "C" fn population_set_max_children_size(population_ptr: *mut Population, max_children_size: usize) {
+    assert!(!population_ptr.is_null());
+    unsafe { (*population_ptr).max_age = max_children_size };
 }
 
 #[no_mangle]
@@ -441,6 +450,18 @@ pub extern "C" fn population_set_header(population: *mut Population,
         header.push(string)
     }
     unsafe { (*population).header = header };
+}
+
+#[no_mangle]
+pub extern "C" fn population_free(population: *mut Population) {
+    if population.is_null() { return; }
+    unsafe { Box::from_raw(population); }
+}
+
+#[no_mangle]
+pub extern "C" fn population_evolve(population: *mut Population) {
+    if population.is_null() { return; }
+    unsafe { (*population).evolve_by_rank() };
 }
 
 #[no_mangle]
