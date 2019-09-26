@@ -30,8 +30,6 @@ class Individual:
         return r_str
 
 
-# TODO Represent this class as a function for Population
-#  (because of error while accessing it after passing it as ptr to Population)
 class Population:
     def __init__(self, training_data: List[list],
                  training_data_row_size: int,
@@ -42,11 +40,16 @@ class Population:
                  crossover_chance: float = 0.8,
                  header: Optional[List[str]] = None):
         # initialization
+        self.__population_ptr = None
         self.__training_data = None
-        self.__raw_training_data = training_data
-        self.__training_data_row_size = training_data_row_size
-        self.__initial_population_size = initial_population_size
-        self.__max_age = max_age
+        self.__training_data_row_size = None
+        # TODO Add TrainingDataRowSize setter
+        self.training_data_row_size = training_data_row_size
+        self.__initial_population_size = 200
+        # TODO Add InitialPopulationSize setter
+        self.initial_population_size = initial_population_size
+        self.__max_age = 7
+        self.max_age = max_age
         self.__max_children_size = max_children_size
         self.__mutation_chance = mutation_chance
         self.__crossover_chance = crossover_chance
@@ -55,6 +58,11 @@ class Population:
         # Validation of training data
         self.training_data = training_data
 
+        self.create_population_from_training_data()
+
+    def create_population_from_training_data(self):
+        if self.__population_ptr:
+            lib.population_free(self.__population_ptr)
         cdata = list(map(Population.row_to_c_double, self.training_data))
         training_data_ptr = lib.training_data_init(
             cdata, len(cdata), self.training_data_row_size
@@ -65,6 +73,7 @@ class Population:
             self.initial_population_size,
             self.max_children_size
         )
+
 
     @property
     def training_data(self):
