@@ -1,15 +1,18 @@
 extern crate rand;
 extern crate rayon;
+extern crate serde;
+extern crate serde_json;
 
 use rayon::prelude::*;
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
-use std::os::raw::{c_longlong, c_double, c_char};
+use serde::{Deserialize, Serialize};
+use std::os::raw::{c_double, c_char};
 use std::slice;
 use std::ffi::{CString, CStr};
 use std::cmp::Ordering::Equal;
-use std::iter::FromIterator;
 
+#[derive(Serialize, Deserialize)]
 pub struct Individual {
     genotype: Vec<c_double>,
     fitness: c_double,
@@ -88,29 +91,32 @@ impl Individual {
             age: self.age,
         }
     }
+    fn clone(&self) -> Individual {
+        Individual {
+            genotype: self.genotype.clone(),
+            fitness: self.fitness,
+            age: 0,
+        }
+    }
+    fn to_new(&self, training_data: &TrainingData) -> Individual {
+        let genotype = self.genotype.clone();
+        let fitness = calculate_fitness(&genotype, training_data);
+        Individual {
+            genotype,
+            fitness,
+            age: 0,
+        }
+    }
+    fn from_json(json: &str) -> Individual {
+        let individual: Individual = serde_json::from_str(json).unwrap();
+        individual
+    }
 }
 
-// TODO Fix String representation of this function
 impl ToString for Individual {
     fn to_string(&self) -> String {
-        let mut as_string = String::from("<Individual: \n<genotype: [");
-        if self.genotype.len() > 0 {
-            for value in self.genotype.iter() {
-                as_string += &value.to_string();
-                as_string += &", ";
-            }
-            as_string.pop();
-            as_string.pop();
-        }
-        as_string += &"]>";
-        as_string += &"\n<fitness: ";
-        as_string += &self.fitness.to_string();
-        as_string += &">";
-        as_string += &"\n<age: ";
-        as_string += &self.age.to_string();
-        as_string += &">";
-        as_string += &"\n>";
-        as_string
+        let mut as_string = serde_json::to_string(&self);
+        as_string.unwrap()
     }
 }
 
@@ -128,9 +134,23 @@ pub extern fn individual_free(ptr: *mut Individual) {
 }
 
 #[no_mangle]
+pub extern "C" fn individual_from_json(string_ptr: *const c_char, len: usize) -> *mut Individual {
+    assert!(!string_ptr.is_null());
+    let c_str = unsafe { CStr::from_ptr(string_ptr) };
+    let string = String::from(c_str.to_str().unwrap());
+    Box::into_raw(Box::new(Individual::from_json(&string)))
+}
+
+#[no_mangle]
 pub extern "C" fn individual_to_c_char(individual: *mut Individual) -> *const c_char {
     assert!(!individual.is_null());
     struct_to_c_char(individual)
+}
+
+#[no_mangle]
+pub extern "C" fn individual_get_fitness(individual: *mut Individual) -> c_double {
+    assert!(!individual.is_null());
+    unsafe { (*individual).fitness.clone() }
 }
 
 #[no_mangle]
@@ -140,7 +160,7 @@ pub extern "C" fn individual_to_u8(individual: *mut Individual) -> *const u8 {
 }
 
 // TrainingData
-
+#[derive(Serialize, Deserialize)]
 pub struct TrainingData {
     data: Vec<Vec<c_double>>,
     genotype_size: usize,
@@ -177,27 +197,8 @@ impl TrainingData {
 
 impl ToString for TrainingData {
     fn to_string(&self) -> String {
-        let mut as_string = String::from("<TrainingData: <data: [");
-        if self.data.len() > 0 {
-            for array in self.data.iter() {
-                as_string += &"[";
-                if array.len() > 0 {
-                    for value in array.iter() {
-                        as_string += &value.to_string();
-                        as_string += &", ";
-                    }
-                    // remove last ", "
-                    as_string.pop();
-                    as_string.pop();
-                }
-                as_string += &"], "
-            }
-            // remove last ", "
-            as_string.pop();
-            as_string.pop();
-        }
-        as_string += &"]>>";
-        as_string
+        let mut as_string = serde_json::to_string(&self);
+        as_string.unwrap()
     }
 }
 
@@ -254,7 +255,7 @@ pub extern "C" fn training_data_to_u8(training_data: *mut TrainingData) -> *cons
 }
 
 // Population
-
+#[derive(Serialize, Deserialize)]
 pub struct Population {
     individuals: Vec<Individual>,
     best: Individual,
@@ -305,6 +306,9 @@ impl Population {
             .map(|_| Individual::random(genotype_size, training_data))
             .collect();
         individuals
+    }
+    fn add_individual(&mut self, individual: &Individual) {
+        self.individuals.push(individual.to_new(&self.training_data));
     }
     fn increment_age(&mut self) {
         self.individuals.par_iter_mut().for_each(|i| i.age += 1);
@@ -370,26 +374,21 @@ impl Population {
         self.individuals.append(&mut children);
         self.individuals.append(&mut mutated);
     }
+    fn get_best(&mut self) -> Individual {
+        let best: Individual = self.individuals.iter()
+            .min_by(
+                |a, b| a.fitness
+                    .partial_cmp(&b.fitness)
+                    .unwrap_or(Equal))
+            .map(Individual::dup).unwrap();
+        best
+    }
 }
 
-// TODO Fix this function and add header
 impl ToString for Population {
     fn to_string(&self) -> String {
-        let mut as_string = String::from("<Population: \n<Individuals :[");
-        if self.individuals.len() > 0 {
-            for value in self.individuals.iter() {
-                as_string += &value.to_string();
-                as_string += &", ";
-            }
-            as_string.pop();
-            as_string.pop();
-        }
-        as_string += &"]>,\n<Best: ";
-        as_string += &self.best.to_string();
-        as_string += &">,\n";
-        as_string += &self.training_data.to_string();
-        as_string += &"\n>";
-        as_string
+        let mut as_string = serde_json::to_string(&self);
+        as_string.unwrap()
     }
 }
 
@@ -415,26 +414,48 @@ pub extern "C" fn population_set_training_data(population_ptr: *mut Population,
     unsafe { (*population_ptr).training_data = *training_data };
 }
 
+#[no_mangle]
 pub extern "C" fn population_set_mutation_chance(population_ptr: *mut Population,
                                                  mutation_chance: c_double) {
     assert!(!population_ptr.is_null());
     unsafe { (*population_ptr).mutation_chance = mutation_chance };
 }
 
+#[no_mangle]
 pub extern "C" fn population_set_crossover_chance(population_ptr: *mut Population,
                                                   crossover_chance: c_double) {
     assert!(!population_ptr.is_null());
     unsafe { (*population_ptr).crossover_chance = crossover_chance };
 }
 
+#[no_mangle]
 pub extern "C" fn population_set_max_age(population_ptr: *mut Population, max_age: usize) {
     assert!(!population_ptr.is_null());
     unsafe { (*population_ptr).max_age = max_age };
 }
 
-pub extern "C" fn population_set_max_children_size(population_ptr: *mut Population, max_children_size: usize) {
+#[no_mangle]
+pub extern "C" fn population_set_max_children_size(population_ptr: *mut Population,
+                                                   max_children_size: usize) {
     assert!(!population_ptr.is_null());
     unsafe { (*population_ptr).max_age = max_children_size };
+}
+
+#[no_mangle]
+pub extern "C" fn population_add_individual(population_ptr: *mut Population,
+                                            individual_ptr: *mut Individual) {
+    assert!(!population_ptr.is_null());
+    assert!(!individual_ptr.is_null());
+    unsafe { (*population_ptr).add_individual(&(*individual_ptr)) };
+}
+
+#[no_mangle]
+pub extern "C" fn population_get_best(population_ptr: *mut Population) -> *mut Individual {
+    assert!(!population_ptr.is_null());
+    let best = unsafe { (*population_ptr).get_best() };
+    Box::into_raw(Box::new(
+        best
+    ))
 }
 
 #[no_mangle]
@@ -496,7 +517,7 @@ pub fn get_parent_id(population_size: usize, rank_vec: &Vec<f64>) -> usize {
     let mut rng = thread_rng();
     let value: f64 = rng.gen();
     for (i, rank) in rank_vec.iter().enumerate() {
-        if value > *rank {
+        if value < *rank {
             return i;
         }
     }
