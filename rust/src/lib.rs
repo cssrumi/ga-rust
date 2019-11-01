@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::os::raw::{c_double, c_char};
+use std::os::raw::{c_double, c_char, c_int};
 use std::slice;
 use std::ffi::{CString, CStr};
 use std::cmp::Ordering::Equal;
@@ -120,6 +120,16 @@ impl ToString for Individual {
     }
 }
 
+impl PartialEq for Individual {
+    fn eq(&self, other: &Individual) -> bool {
+        self.genotype.iter()
+            .zip(other.genotype.iter())
+            .all(|(a, b)| (a.is_nan() && b.is_nan()) || (a == b))
+    }
+}
+
+impl Eq for Individual {}
+
 // External function for Individual
 
 #[no_mangle]
@@ -151,6 +161,15 @@ pub extern "C" fn individual_to_c_char(individual: *mut Individual) -> *const c_
 pub extern "C" fn individual_get_fitness(individual: *mut Individual) -> c_double {
     assert!(!individual.is_null());
     unsafe { (*individual).fitness.clone() }
+}
+
+#[no_mangle]
+pub extern "C" fn individual_eq_individual(individual: *mut Individual,
+                                           other_individual: *mut Individual) -> c_int {
+    assert!(!individual.is_null());
+    assert!(!other_individual.is_null());
+    let is_eq = unsafe { (*individual).eq(&(*other_individual)) } as c_int;
+    is_eq
 }
 
 #[no_mangle]

@@ -15,6 +15,14 @@ class Individual:
             self._ptr = lib.individual_new()
             self.logger.debug('{} created'.format(__class__.__name__))
 
+    def __eq__(self, other: 'Individual'):
+        if self._ptr and other._ptr:
+            if lib.individual_eq_individual(self._ptr, other._ptr):
+                return True
+            return False
+        else:
+            raise ValueError("Invalid pointer to {}".format(__class__))
+
     @property
     def fitness(self):
         if self._ptr:
