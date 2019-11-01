@@ -122,7 +122,7 @@ impl ToString for Individual {
 
 impl PartialEq for Individual {
     fn eq(&self, other: &Individual) -> bool {
-        (self.len() == other.len()) &&
+        (self.genotype.len() == other.genotype.len()) &&
             self.genotype.iter()
                 .zip(other.genotype.iter())
                 .all(|(a, b)| (a.is_nan() && b.is_nan()) || (a == b))
