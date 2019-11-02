@@ -151,8 +151,8 @@ class Population:
         except (TypeError, ValueError):
             self.logger.warning("Unable to cast value of {} to {}".format(attr, cast.__name__))
             return
-        if isinstance(cast, (int, float)):
-            if value > 0:
+        if isinstance(cast, (int, float)) and minimal:
+            if value >= minimal:
                 if self.__population_ptr:
                     if lib_function:
                         lib_function(self.__population_ptr, value)
@@ -166,7 +166,8 @@ class Population:
                 self.logger.warning("Unable to change value. The minimum value of {} is {}".format(attr, minimal))
         else:
             if self.__population_ptr:
-                lib_function(self.__population_ptr, value)
+                if lib_function:
+                    lib_function(self.__population_ptr, value)
                 setattr(self, hidden_attr, value)
                 self.__initial_population_size = value
             elif not hasattr(self, hidden_attr):
@@ -188,6 +189,7 @@ class Population:
             data = map(Population.row_to_float, data)
             data = filter(lambda row: row, data)
             self.__training_data = list(data) if data else None
+            self.logger.info('Training data len: {}'.format(len(self.training_data)))
         else:
             self.logger.warning("Training Data is immutable")
 
